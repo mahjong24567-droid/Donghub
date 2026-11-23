@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#161a33">
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src * blob:; connect-src *; frame-src 'none'; object-src 'none'">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Donghub">
+<title>Donghub</title>
+<style>
+:root{--bg:#161a33;--panel:#1f2445;--ink:#eceaf6;--mute:#9a9cbc;--jade:#43c3a6;--gold:#f0b95a;--line:#2e3563;--red:#e0675a}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",sans-serif;padding:env(safe-area-inset-top) 0 calc(72px + env(safe-area-inset-bottom))}
+h1,h2{font-family:Georgia,"Times New Roman",serif;font-weight:700;margin:0}
+header{display:flex;align-items:center;gap:12px;padding:16px 16px 8px;max-width:960px;margin:auto}
+header h1{font-size:26px;letter-spacing:.5px}
+header h1 b{color:var(--jade)}
+#inst{margin-left:auto;display:none}
+main{max-width:960px;margin:auto;padding:8px 16px}
+input,button,select{font:inherit;color:inherit}
+input[type=text],input[type=url],input[type=search]{width:100%;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:11px 12px}
+input:focus-visible,button:focus-visible{outline:2px solid var(--jade);outline-offset:2px}
+button{cursor:pointer;border:1px solid var(--line);background:var(--panel);border-radius:10px;padding:8px 14px}
+button.pri{background:var(--jade);color:#08231c;border-color:var(--jade);font-weight:600}
+button.gold{border-color:var(--gold);color:var(--gold)}
+button.off{border-color:var(--red);color:var(--red)}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:14px;margin-top:14px}
+.card{background:none;border:0;padding:0;text-align:left}
+.poster{aspect-ratio:2/3;border-radius:12px;display:grid;place-items:center;font:700 44px Georgia,serif;color:rgba(255,255,255,.85);border:1px solid var(--line)}
+.card .t{margin-top:6px;font-weight:600;line-height:1.3}
+.card .s{color:var(--mute);font-size:13px}
+.ep{display:flex;align-items:center;gap:10px;padding:12px 0;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.ep .n{flex:1;min-width:140px}
+.ep .n small{display:block;color:var(--mute)}
+.ep .pos{color:var(--jade)}
+.empty{color:var(--mute);padding:40px 0;text-align:center}
+.bar{position:fixed;left:0;right:0;bottom:0;display:flex;background:#10132a;border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom)}
+.bar button{flex:1;border:0;border-radius:0;background:none;padding:16px 4px;color:var(--mute)}
+.bar button[aria-current=true]{color:var(--jade);box-shadow:inset 0 2px 0 var(--jade)}
+form{display:grid;gap:12px;max-width:520px}
+label{display:grid;gap:4px;color:var(--mute);font-size:13px}
+.note{color:var(--mute);font-size:13px}
+#player{position:fixed;inset:0;background:#000;z-index:10;display:none;flex-direction:column;padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+#player.on{display:flex}
+#player .top{display:flex;align-items:center;gap:12px;padding:10px 14px;background:#0a0c1c}
+#player .top span{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#player video{flex:1;width:100%;min-height:0;background:#000}
+.toast{position:fixed;left:50%;bottom:calc(84px + env(safe-area-inset-bottom));transform:translateX(-50%);background:var(--panel);border:1px solid var(--line);padding:10px 16px;border-radius:10px;z-index:20}
+@media(prefers-reduced-motion:no-preference){.card:hover .poster{transform:translateY(-3px)}.poster{transition:transform .15s}}
+</style>
+</head>
+<body>
+<header><h1>Dong<b>hub</b></h1><button class="pri" id="inst">Pasang aplikasi</button></header>
+<main id="app"></main>
+<nav class="bar" id="nav">
+  <button data-v="home">Beranda</button>
+  <button data-v="dl">Unduhan</button>
+  <button data-v="add">Tambah</button>
+</nav>
+<div id="player"><div class="top"><button id="close">Tutup</button><span id="ptitle"></span></div><video id="vid" controls playsinline></video></div>
+
+<script>
+const $=s=>document.querySelector(s);
+const esc=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const uid=()=>Date.now().toString(36)+Math.random().toString(36).slice(2,6);
+const rd=(k,d)=>{try{return JSON.parse(localStorage.getItem(k))??d}catch(e){return d}};
+const wr=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+
+/* ---------- Penyimpanan video offline (IndexedDB) ---------- */
+const openDB=()=>new Promise((res,rej)=>{const r=indexedDB.open('donghub',1);r.onupgradeneeded=()=>r.result.createObjectStore('v');r.onsuccess=()=>res(r.result);r.onerror=()=>rej(r.error)});
+const idb=async(mode,fn)=>{const db=await openDB();return new Promise((res,rej)=>{const t=db.transaction('v',mode);const q=fn(t.objectStore('v'));t.oncomplete=()=>res(q&&q.result);t.onerror=()=>rej(t.error);t.onabort=()=>rej(t.error)})};
+const getV=k=>idb('readonly',s=>s.get(k));
+const putV=(k,b)=>idb('readwrite',s=>s.put(b,k));
+const delV=k=>idb('readwrite',s=>s.delete(k));
+
+/* ---------- State ---------- */
+let lib=rd('dh_lib',[]);          // [{id,title,eps:[{id,title,src}]}]
+let saved=rd('dh_saved',{});      // {epId: ukuranByte}
+let pos=rd('dh_pos',{});          // {epId: detik}
+let view='home',cur=null,q='';
+const store=()=>{wr('dh_lib',lib);wr('dh_saved',saved);wr('dh_pos',pos)};
+const mb=b=>(b/1048576).toFixed(b>1.05e8?0:1)+' MB';
+const hue=s=>{let a=7;for(const c of s)a=(a*31+c.charCodeAt(0))>>>0;return a%360};
+const poster=t=>`<div class="poster" style="background:linear-gradient(160deg,hsl(${hue(t)} 45% 32%),hsl(${(hue(t)+50)%360} 50% 16%))">${esc([...t].slice(0,2).join(''))}</div>`;
+const findEp=id=>{for(const s of lib){const e=s.eps.find(x=>x.id===id);if(e)return{s,e}}};
+function toast(m){const t=document.createElement('div');t.className='toast';t.textContent=m;document.body.append(t);setTimeout(()=>t.remove(),2400)}
+
+/* ---------- Tampilan ---------- */
+function gridHTML(){
+  const L=lib.filter(s=>s.title.toLowerCase().includes(q.toLowerCase()));
+  if(!lib.length)return'<p class="empty">Belum ada serial. Buka tab Tambah untuk memasukkan video pertama.</p>';
+  if(!L.length)return'<p class="empty">Tidak ada serial yang cocok.</p>';
+  return`<div class="grid">${L.map(s=>`<button class="card" data-act="open" data-id="${s.id}">${poster(s.title)}<div class="t">${esc(s.title)}</div><div class="s">${s.eps.length} episode</div></button>`).join('')}</div>`;
+}
+function epRow(s,e){
+  const has=e.id in saved,p=pos[e.id];
+  return`<div class="ep"><div class="n">${esc(e.title)}<small>${has?'Tersimpan offline · '+mb(saved[e.id]):(e.src?'Online':'')}${p?` <span class="pos">· lanjut ${Math.floor(p/60)}:${String(Math.floor(p%60)).padStart(2,'0')}</span>`:''}</small></div>
+  <button class="pri" data-act="play" data-id="${e.id}">Tonton</button>
+  ${has?`<button class="off" data-act="rmdl" data-id="${e.id}">Hapus unduhan</button>`:(e.src?`<button class="gold" data-act="dl" data-id="${e.id}" data-dl="${e.id}">Unduh</button>`:'')}
+  <button data-act="rmep" data-id="${e.id}" aria-label="Hapus episode">✕</button></div>`;
+}
+function render(){
+  document.querySelectorAll('#nav button').forEach(b=>b.setAttribute('aria-current',String(b.dataset.v===view||(view==='series'&&b.dataset.v==='home'))));
+  const app=$('#app');
+  if(view==='home'){
+    app.innerHTML=`<input type="search" id="q" placeholder="Cari serial" value="${esc(q)}" aria-label="Cari serial"><div id="grid">${gridHTML()}</div>`;
+  }else if(view==='series'){
+    const s=lib.find(x=>x.id===cur);if(!s){view='home';return render()}
+    app.innerHTML=`<button data-act="back">Kembali</button><h2 style="margin:14px 0 4px">${esc(s.title)}</h2><div>${s.eps.map(e=>epRow(s,e)).join('')}</div>`;
+  }else if(view==='dl'){
+    const ids=Object.keys(saved),tot=ids.reduce((a,k)=>a+saved[k],0);
+    app.innerHTML=`<h2>Unduhan</h2><p class="note">${ids.length} episode · ${mb(tot)} di perangkat ini</p>`+(ids.length?ids.map(id=>{const f=findEp(id);return f?`<div class="ep"><div class="n">${esc(f.e.title)}<small>${esc(f.s.title)} · ${mb(saved[id])}</small></div><button class="pri" data-act="play" data-id="${id}">Tonton</button><button class="off" data-act="rmdl" data-id="${id}">Hapus</button></div>`:''}).join(''):'<p class="empty">Belum ada unduhan. Buka sebuah serial lalu ketuk Unduh.</p>');
+  }else{
+    app.innerHTML=`<h2>Tambah episode</h2><form id="addf">
+      <label>Judul serial<input type="text" name="series" list="sl" required placeholder="Judul serial">
+      <datalist id="sl">${lib.map(s=>`<option value="${esc(s.title)}">`).join('')}</datalist></label>
+      <label>Judul episode<input type="text" name="ep" required placeholder="Episode 1"></label>
+      <label>Alamat video (.mp4 / .webm)<input type="url" name="url" placeholder="https://servermu.com/video.mp4"></label>
+      <label>atau pilih file dari perangkat<input type="file" name="file" accept="video/*"></label>
+      <p class="note">Gunakan video milikmu sendiri atau yang berlisensi. Server video harus mengizinkan CORS (Access-Control-Allow-Origin) agar bisa diunduh untuk offline.</p>
+      <button class="pri" type="submit">Simpan episode</button></form>`;
+  }
+}
+
+/* ---------- Aksi ---------- */
+document.addEventListener('input',e=>{if(e.target.id==='q'){q=e.target.value;$('#grid').innerHTML=gridHTML()}});
+$('#nav').addEventListener('click',e=>{const b=e.target.closest('button');if(b){view=b.dataset.v;render()}});
+document.addEventListener('submit',async e=>{
+  if(e.target.id!=='addf')return;e.preventDefault();
+  const f=new FormData(e.target),st=f.get('series').trim(),et=f.get('ep').trim(),url=(f.get('url')||'').trim(),file=f.get('file');
+  const hasFile=file&&file.size>0;
+  if(!url&&!hasFile)return toast('Isi alamat video atau pilih file');
+  let s=lib.find(x=>x.title.toLowerCase()===st.toLowerCase());
+  if(!s){s={id:uid(),title:st,eps:[]};lib.push(s)}
+  const ep={id:uid(),title:et,src:hasFile?'':url};s.eps.push(ep);
+  if(hasFile){try{await putV(ep.id,file);saved[ep.id]=file.size}catch(err){s.eps.pop();return toast('Penyimpanan penuh atau ditolak')}}
+  store();cur=s.id;view='series';render();toast('Episode disimpan');
+});
+document.addEventListener('click',async e=>{
+  const b=e.target.closest('[data-act]');if(!b)return;
+  const a=b.dataset.act,id=b.dataset.id;
+  if(a==='open'){cur=id;view='series';render()}
+  else if(a==='back'){view='home';render()}
+  else if(a==='play')play(id);
+  else if(a==='dl')download(id);
+  else if(a==='rmdl'){await delV(id);delete saved[id];store();render();toast('Unduhan dihapus')}
+  else if(a==='rmep'){const f=findEp(id);if(!f||!confirm('Hapus episode ini?'))return;await delV(id);delete saved[id];f.s.eps=f.s.eps.filter(x=>x.id!==id);if(!f.s.eps.length)lib=lib.filter(x=>x!==f.s);store();render()}
+});
+
+async function download(id){
+  const f=findEp(id);if(!f||!f.e.src)return;
+  const btn=document.querySelector(`[data-dl="${id}"]`);
+  try{
+    if(navigator.storage&&navigator.storage.persist)navigator.storage.persist();
+    const r=await fetch(f.e.src);if(!r.ok)throw new Error('HTTP '+r.status);
+    const total=+r.headers.get('content-length')||0,reader=r.body.getReader(),parts=[];let got=0;
+    for(;;){const{done,value}=await reader.read();if(done)break;parts.push(value);got+=value.length;if(btn)btn.textContent=total?Math.round(got/total*100)+'%':mb(got)}
+    const blob=new Blob(parts,{type:r.headers.get('content-type')||'video/mp4'});
+    await putV(id,blob);saved[id]=blob.size;store();render();toast('Siap ditonton offline');
+  }catch(err){
+    if(btn)btn.textContent='Unduh';
+    toast('Gagal mengunduh. Cek koneksi dan izin CORS server.');
+  }
+}
+
+let objUrl=null,curEp=null;
+async function play(id){
+  const f=findEp(id);if(!f)return;
+  const blob=await getV(id);
+  const v=$('#vid');
+  if(objUrl)URL.revokeObjectURL(objUrl);
+  objUrl=blob?URL.createObjectURL(blob):null;
+  const src=objUrl||f.e.src;
+  if(!src)return toast('Video tidak tersedia');
+  if(!blob&&!navigator.onLine)return toast('Kamu offline. Unduh episode ini dulu.');
+  curEp=id;v.src=src;$('#ptitle').textContent=f.s.title+' · '+f.e.title;
+  $('#player').classList.add('on');
+  v.onloadedmetadata=()=>{if(pos[id]&&pos[id]<v.duration-5)v.currentTime=pos[id]};
+  v.play().catch(()=>{});
+}
+$('#vid').addEventListener('timeupdate',e=>{if(curEp&&e.target.currentTime>1){pos[curEp]=e.target.currentTime;if(Math.round(e.target.currentTime)%5===0)wr('dh_pos',pos)}});
+$('#close').onclick=()=>{const v=$('#vid');v.pause();wr('dh_pos',pos);v.removeAttribute('src');v.load();$('#player').classList.remove('on');if(objUrl){URL.revokeObjectURL(objUrl);objUrl=null}curEp=null;render()};
+
+/* ---------- Pasang sebagai aplikasi ---------- */
+let dip=null;
+const standalone=matchMedia('(display-mode: standalone)').matches||navigator.standalone;
+const isIOS=/iphone|ipad|ipod/i.test(navigator.userAgent);
+window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();dip=e;$('#inst').style.display='block'});
+window.addEventListener('appinstalled',()=>{dip=null;$('#inst').style.display='none';toast('Aplikasi terpasang')});
+if(!standalone&&isIOS)$('#inst').style.display='block';
+$('#inst').onclick=async()=>{
+  if(dip){dip.prompt();await dip.userChoice;dip=null;$('#inst').style.display='none'}
+  else toast('Di Safari: ketuk Bagikan, lalu Tambah ke Layar Utama');
+};
+if(standalone)$('#inst').style.display='none';
+
+render();
+if('serviceWorker' in navigator&&location.protocol.startsWith('http'))navigator.serviceWorker.register('sw.js').catch(()=>{});
+</script>
+</body>
+</html>
